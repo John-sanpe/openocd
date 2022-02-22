@@ -395,12 +395,12 @@ static int ch341a_port_transfer(uint8_t *buff, uint8_t dire, unsigned int len)
         int xfer_len;
 
         transfer[0] = CH341A_CMD_UIO_STREAM;
-        transfer[1] = CH341A_UIO_CMD_STM_DIR | dire;
+        transfer[1] = CH341A_UIO_CMD_STM_DIR | (0x3f & dire);
         transfer[xfer_send - 1] = CH341A_UIO_CMD_STM_END;
 
         for (count = 0; count < xfer; ++count) {
-            transfer[(count + 1) * 3 - 1] = CH341A_UIO_CMD_STM_OUT | *buff;
-            transfer[(count + 1) * 3 + 0] = CH341A_UIO_CMD_STM_US | 20;
+            transfer[(count + 1) * 3 - 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *buff);
+            transfer[(count + 1) * 3 + 0] = CH341A_UIO_CMD_STM_US | (0x3f & 0x00);
             transfer[(count + 1) * 3 + 1] = CH341A_UIO_CMD_STM_IN;
         }
 
@@ -432,9 +432,8 @@ static int ch341a_port_transfer(uint8_t *buff, uint8_t dire, unsigned int len)
 
 static inline uint8_t ch341_jtag_write(bool tck, bool tms, bool tdi)
 {
-    uint8_t value;
+    uint8_t value = 0xff;
 
-    value = (1 << ch341a_trst_gpio) | (1 << ch341a_srst_gpio);
     value = tck ? value | (1 << ch341a_tck_gpio) : value & ~(1 << ch341a_tck_gpio);
     value = tms ? value | (1 << ch341a_tms_gpio) : value & ~(1 << ch341a_tms_gpio);
     value = tdi ? value | (1 << ch341a_tdi_gpio) : value & ~(1 << ch341a_tdi_gpio);
@@ -475,8 +474,8 @@ static void syncbb_state_move(int skip)
         ch341_jtag_write(0, tms, 0);
         ch341_jtag_write(1, tms, 0);
     }
-    ch341_jtag_write(0, tms, 0);
 
+    ch341_jtag_write(0, tms, 0);
     tap_set_state(tap_get_end_state());
 }
 
@@ -525,7 +524,6 @@ static void syncbb_path_move(struct pathmove_command *cmd)
     }
 
     ch341_jtag_write(0, tms, 0);
-
     tap_set_end_state(tap_get_state());
 }
 
@@ -610,16 +608,6 @@ static int ch341a_jtag_execute_queue(void)
     int scan_size;
     uint8_t *buffer;
     int retval = ERROR_OK;
-
-    while (1) {
-        uint8_t val;
-        val = ch341_jtag_write(0, 0, 0);
-        printf("%#x\n", val);
-        sleep(1);
-        val = ch341_jtag_write(1, 1, 1);
-        printf("%#x\n", val);
-        sleep(1);
-    }
 
     while (cmd) {
         switch (cmd->type) {
