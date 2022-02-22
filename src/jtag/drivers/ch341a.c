@@ -356,12 +356,12 @@ COMMAND_HANDLER(ch341a_handle_swclk_num_command)
 
 static int ch341a_port_transfer(uint8_t *buff, uint8_t dire, unsigned int len)
 {
-    unsigned int xfer, xfer_max = (CH341_PACKET_LENGTH - 3) / 3;
+    unsigned int xfer, xfer_max = (CH341_PACKET_LENGTH - 3) / 2;
     int ret, received = 0;
 
     for (; (xfer = (len < xfer_max ? len : xfer_max)); len -= xfer, buff += xfer) {
         uint8_t transfer[CH341_PACKET_LENGTH];
-        unsigned int xfer_send = xfer * 3 + 3;
+        unsigned int xfer_send = xfer * 2 + 3;
         unsigned int count;
         int xfer_len;
 
@@ -370,9 +370,8 @@ static int ch341a_port_transfer(uint8_t *buff, uint8_t dire, unsigned int len)
         transfer[xfer_send - 1] = CH341A_UIO_CMD_STM_END;
 
         for (count = 0; count < xfer; ++count) {
-            transfer[(count + 1) * 3 - 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *buff);
-            transfer[(count + 1) * 3 + 0] = CH341A_UIO_CMD_STM_US | (0x3f & 0x00);
-            transfer[(count + 1) * 3 + 1] = CH341A_UIO_CMD_STM_IN;
+            transfer[(count + 1) * 2 + 0] = CH341A_UIO_CMD_STM_OUT | (0x3f & *buff);
+            transfer[(count + 1) * 2 + 1] = CH341A_UIO_CMD_STM_IN;
         }
 
         ret = jtag_libusb_bulk_write(
