@@ -84,21 +84,6 @@ enum ch341a_pin_num {
     CH341A_PIN_D5       = 5,
     CH341A_PIN_D6       = 6,
     CH341A_PIN_D7       = 7,
-    CH341A_PIN_IO       = CH341A_PIN_D7,
-
-    CH341A_PIN_WR       = 8,
-    CH341A_PIN_DS       = 9,
-    CH341A_PIN_RST      = 10,
-    CH341A_PIN_AS       = 11,
-    CH341A_PIN_WO       = CH341A_PIN_AS,
-
-    CH341A_PIN_WAIT     = 12,
-    CH341A_PIN_INT      = 13,
-    CH341A_PIN_ERR      = 14,
-    CH341A_PIN_SLCT     = 15,
-    CH341A_PIN_PEMP     = 16,
-    CH341A_PIN_RO       = CH341A_PIN_PEMP,
-
     CH341A_PIN_NULL,
 };
 
@@ -111,15 +96,6 @@ static const char *ch341a_pin_name[] = {
     [CH341A_PIN_D5]     = "D5",
     [CH341A_PIN_D6]     = "D6",
     [CH341A_PIN_D7]     = "D7",
-    [CH341A_PIN_WR]     = "WR",
-    [CH341A_PIN_DS]     = "DS",
-    [CH341A_PIN_RST]    = "RST",
-    [CH341A_PIN_AS]     = "AS",
-    [CH341A_PIN_WAIT]   = "WAIT",
-    [CH341A_PIN_INT]    = "INT",
-    [CH341A_PIN_ERR]    = "ERR",
-    [CH341A_PIN_SLCT]   = "SLCT",
-    [CH341A_PIN_PEMP]   = "PEMP",
 };
 
 static const char *ch341a_transports[] = {
@@ -151,22 +127,17 @@ static enum ch341a_pin_num ch341a_name_to_pin(const char *name)
 
 static bool ch341a_pin_is_read(enum ch341a_pin_num num)
 {
-    if (num <= CH341A_PIN_IO)
-        return true;
-    else if (num > CH341A_PIN_WO && num <= CH341A_PIN_PEMP)
-        return true;
-    else
-        return false;
+    return num <= CH341A_PIN_D7;
 }
 
 static bool ch341a_pin_is_write(enum ch341a_pin_num num)
 {
-    return num <= CH341A_PIN_WO;
+    return num <= CH341A_PIN_D5;
 }
 
 static bool ch341a_pin_is_io(enum ch341a_pin_num num)
 {
-    return num <= CH341A_PIN_IO;
+    return ch341a_pin_is_read(num) && ch341a_pin_is_write(num);
 }
 
 COMMAND_HANDLER(ch341a_handle_vid_pid_command)
@@ -444,7 +415,7 @@ static inline uint8_t ch341_jtag_write(bool tck, bool tms, bool tdi)
 
 static inline uint8_t ch341a_jtag_reset(bool trst, bool srst)
 {
-    uint8_t value = 0;
+    uint8_t value = 0xff;
 
     value = trst ? value & ~(1 << ch341a_tms_gpio) : value | (1 << ch341a_tms_gpio);
     value = srst ? value & ~(1 << ch341a_tdi_gpio) : value | (1 << ch341a_tdi_gpio);
@@ -465,12 +436,13 @@ static void syncbb_end_state(tap_state_t state)
 
 static void syncbb_state_move(int skip)
 {
-    int i = 0, tms = 0;
     uint8_t tms_scan = tap_get_tms_path(tap_get_state(), tap_get_end_state());
     int tms_count = tap_get_tms_path_len(tap_get_state(), tap_get_end_state());
+    bool tms = 0;
+    int count;
 
-    for (i = skip; i < tms_count; i++) {
-        tms = (tms_scan >> i) & 1;
+    for (count = skip; count < tms_count; ++count) {
+        tms = (tms_scan >> count) & 0x01;
         ch341_jtag_write(0, tms, 0);
         ch341_jtag_write(1, tms, 0);
     }
@@ -483,7 +455,7 @@ static void syncbb_execute_tms(struct jtag_command *cmd)
 {
     unsigned num_bits = cmd->cmd.tms->num_bits;
     const uint8_t *bits = cmd->cmd.tms->bits;
-    int tms = 0;
+    bool tms = 0;
 
     LOG_DEBUG_IO("TMS: %d bits", num_bits);
 
@@ -499,11 +471,10 @@ static void syncbb_execute_tms(struct jtag_command *cmd)
 static void syncbb_path_move(struct pathmove_command *cmd)
 {
     int num_states = cmd->num_states;
-    int state_count;
-    int tms = 0;
+    int state_count = 0;
+    bool tms = 0;
 
-    state_count = 0;
-    while (num_states) {
+    while (num_states--) {
         if (tap_state_transition(tap_get_state(), false) == cmd->path[state_count]) {
             tms = 0;
         } else if (tap_state_transition(tap_get_state(), true) == cmd->path[state_count]) {
@@ -517,45 +488,42 @@ static void syncbb_path_move(struct pathmove_command *cmd)
 
         ch341_jtag_write(0, tms, 0);
         ch341_jtag_write(1, tms, 0);
-
         tap_set_state(cmd->path[state_count]);
         state_count++;
-        num_states--;
     }
 
     ch341_jtag_write(0, tms, 0);
     tap_set_end_state(tap_get_state());
 }
 
-static void syncbb_runtest(int num_cycles)
+static void syncbb_runtest(unsigned int cycles)
 {
-    int i;
-
     tap_state_t saved_end_state = tap_get_end_state();
+    unsigned int count;
 
     if (tap_get_state() != TAP_IDLE) {
         syncbb_end_state(TAP_IDLE);
         syncbb_state_move(0);
     }
 
-    for (i = 0; i < num_cycles; i++) {
+    for (count = 0; count < cycles; ++count) {
         ch341_jtag_write(0, 0, 0);
         ch341_jtag_write(1, 0, 0);
     }
-    ch341_jtag_write(0, 0, 0);
 
+    ch341_jtag_write(0, 0, 0);
     syncbb_end_state(saved_end_state);
+
     if (tap_get_state() != tap_get_end_state())
         syncbb_state_move(0);
 }
 
-static void syncbb_stableclocks(int num_cycles)
+static void syncbb_stableclocks(unsigned int cycles)
 {
-    int tms = (tap_get_state() == TAP_RESET ? 1 : 0);
-    int i;
+    bool tms = (tap_get_state() == TAP_RESET ? 1 : 0);
+    unsigned int count;
 
-    /* send num_cycles clocks onto the cable */
-    for (i = 0; i < num_cycles; i++) {
+    for (count = 0; count < cycles; ++count) {
         ch341_jtag_write(1, tms, 0);
         ch341_jtag_write(0, tms, 0);
     }
@@ -711,6 +679,7 @@ static int ch341a_init(void)
 
 static int ch341a_quit(void)
 {
+    jtag_libusb_close(ch341a_adapter);
     return ERROR_OK;
 }
 
@@ -726,55 +695,55 @@ static const struct command_registration ch341a_subcommand_handlers[] = {
         .handler = ch341a_handle_jtag_nums_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio numbers for tck, tms, tdo, tdi, trst, srst, swio, swclk.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "tck_num",
         .handler = ch341a_handle_tck_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for tck.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "tms_num",
         .handler = ch341a_handle_tms_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for tms.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "tdo_num",
         .handler = ch341a_handle_tdo_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for tdo.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "tdi_num",
         .handler = ch341a_handle_tdi_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for tdi.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "trst_num",
         .handler = ch341a_handle_trst_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for trst.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "srst_num",
         .handler = ch341a_handle_srst_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for srst.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "swio_num",
         .handler = ch341a_handle_swio_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for swio.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "swclk_num",
         .handler = ch341a_handle_swclk_num_command,
         .mode = COMMAND_CONFIG,
         .help = "gpio number for swclk.",
-        .usage = "<D0-D7|WR|DS|RST|AS|WAIT|INT|ERR|SLCT|PEMP>",
+        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     },
     COMMAND_REGISTRATION_DONE
 };
