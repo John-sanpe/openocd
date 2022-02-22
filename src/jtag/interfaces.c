@@ -145,6 +145,9 @@ extern struct adapter_driver rshim_dap_adapter_driver;
 #if BUILD_AM335XGPIO == 1
 extern struct adapter_driver am335xgpio_adapter_driver;
 #endif
+#if BUILD_CH341A == 1
+extern struct adapter_driver ch341a_adapter_driver;
+#endif
 
 /**
  * The list of built-in JTAG interfaces, containing entries for those
