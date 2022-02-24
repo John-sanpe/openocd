@@ -380,23 +380,29 @@ static int ch341a_port_direction(uint8_t dire)
     return received;
 }
 
-static int ch341a_port_transfer(uint8_t *buff, unsigned int len)
+static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
 {
-    unsigned int xfer, xfer_max = (CH341A_PACKET_LENGTH - 2) / 2;
+    unsigned int xfer, xfer_max = (CH341A_PACKET_LENGTH - (read + 1)) / 2;
     int ret, received;
 
     for (received = 0; (xfer = (len < xfer_max ? len : xfer_max)); len -= xfer, buff += xfer) {
         uint8_t transfer[CH341A_PACKET_LENGTH];
-        unsigned int xfer_send = xfer * 2 + 2;
+        unsigned int xfer_send = xfer * (read + 1) + 2;
         unsigned int count;
         int xfer_len;
 
         transfer[0] = CH341A_CMD_UIO_STREAM;
         transfer[xfer_send - 1] = CH341A_UIO_CMD_STM_END;
 
-        for (count = 0; count < xfer; ++count) {
-            transfer[(count + 1) * 2 - 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *(buff + count));
-            transfer[(count + 1) * 2 + 0] = CH341A_UIO_CMD_STM_IN;
+        if (read) {
+            for (count = 0; count < xfer; ++count) {
+                transfer[(count + 1) * 2 - 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *(buff + count));
+                transfer[(count + 1) * 2 + 0] = CH341A_UIO_CMD_STM_IN;
+            }
+        } else {
+            for (count = 0; count < xfer; ++count) {
+                transfer[count + 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *(buff + count));
+            }
         }
 
         ret = jtag_libusb_bulk_write(
@@ -409,25 +415,26 @@ static int ch341a_port_transfer(uint8_t *buff, unsigned int len)
             exit(1);
         }
 
-        ret = jtag_libusb_bulk_read(
-            ch341a_adapter, CH341A_BULK_READ_ENDPOINT,
-            (void *)buff, xfer, CH341A_BULK_TIMEOUT, &xfer_len
-        );
+        if (read) {
+            ret = jtag_libusb_bulk_read(
+                ch341a_adapter, CH341A_BULK_READ_ENDPOINT,
+                (void *)buff, xfer, CH341A_BULK_TIMEOUT, &xfer_len
+            );
 
-        if (ret < 0 || xfer_len < 0) {
-            LOG_ERROR("ch341a_port_transfer: usb bulk read failed");
-            exit(1);
+            if (ret < 0 || xfer_len < 0) {
+                LOG_ERROR("ch341a_port_transfer: usb bulk read failed");
+                exit(1);
+            }
+            received += xfer_len;
         }
-
-        received += xfer_len;
     }
 
     return received;
 }
 
-static void ch341a_port_buffer_flush(void)
+static void ch341a_port_buffer_flush(bool read)
 {
-    ch341a_port_transfer(ch341a_port_buffer, ch341a_port_buffer_curr);
+    ch341a_port_transfer(ch341a_port_buffer, ch341a_port_buffer_curr, read);
     ch341a_port_buffer_curr = 0;
 }
 
@@ -478,7 +485,7 @@ static inline void ch341a_jtag_reset(bool trst, bool srst)
     }
 
     ch341a_port_buffer[ch341a_port_buffer_curr++] = value;
-    ch341a_port_buffer_flush();
+    ch341a_port_buffer_flush(false);
 }
 
 static void syncbb_end_state(tap_state_t state)
@@ -620,7 +627,7 @@ static void syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int 
     if (tap_get_state() != tap_get_end_state())
         syncbb_state_move(1);
 
-    ch341a_port_buffer_flush();
+    ch341a_port_buffer_flush(type != SCAN_OUT);
 
     if (type != SCAN_OUT) {
         for (bit_cnt = 0; bit_cnt < scan_size; ++bit_cnt) {
@@ -709,7 +716,7 @@ static int ch341a_jtag_execute_queue(void)
         }
 
         if (ch341a_port_buffer_curr)
-            ch341a_port_buffer_flush();
+            ch341a_port_buffer_flush(false);
 
         cmd = cmd->next;
     }
