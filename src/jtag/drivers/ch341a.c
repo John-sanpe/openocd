@@ -98,10 +98,6 @@ static const char *ch341a_pin_name[] = {
     [CH341A_PIN_D7]     = "D7",
 };
 
-static const char *ch341a_transports[] = {
-    "jtag", NULL,
-};
-
 static uint16_t ch341a_vid              = 0x1a86;
 static uint16_t ch341a_pid              = 0x5512;
 static unsigned int ch341a_tck_gpio     = CH341A_PIN_D3;
@@ -110,8 +106,6 @@ static unsigned int ch341a_tdo_gpio     = CH341A_PIN_D7;
 static unsigned int ch341a_tdi_gpio     = CH341A_PIN_D5;
 static unsigned int ch341a_trst_gpio    = CH341A_PIN_D1;
 static unsigned int ch341a_srst_gpio    = CH341A_PIN_D2;
-static unsigned int ch341a_swio_gpio    = CH341A_PIN_D3;
-static unsigned int ch341a_swclk_gpio   = CH341A_PIN_D0;
 static struct libusb_device_handle *ch341a_adapter;
 
 static uint8_t *ch341a_port_buffer;
@@ -137,11 +131,6 @@ static bool ch341a_pin_is_read(enum ch341a_pin_num num)
 static bool ch341a_pin_is_write(enum ch341a_pin_num num)
 {
     return num <= CH341A_PIN_D5;
-}
-
-static bool ch341a_pin_is_io(enum ch341a_pin_num num)
-{
-    return ch341a_pin_is_read(num) && ch341a_pin_is_write(num);
 }
 
 COMMAND_HANDLER(ch341a_handle_vid_pid_command)
@@ -171,8 +160,6 @@ COMMAND_HANDLER(ch341a_handle_jtag_nums_command)
     ch341a_tdi_gpio     = ch341a_name_to_pin(CMD_ARGV[3]);
     ch341a_trst_gpio    = ch341a_name_to_pin(CMD_ARGV[4]);
     ch341a_srst_gpio    = ch341a_name_to_pin(CMD_ARGV[5]);
-    ch341a_swio_gpio    = ch341a_name_to_pin(CMD_ARGV[6]);
-    ch341a_swclk_gpio   = ch341a_name_to_pin(CMD_ARGV[7]);
 
     if (!ch341a_pin_is_write(ch341a_tck_gpio))
         return ERROR_COMMAND_CLOSE_CONNECTION;
@@ -189,26 +176,17 @@ COMMAND_HANDLER(ch341a_handle_jtag_nums_command)
     if (!ch341a_pin_is_write(ch341a_trst_gpio))
         return ERROR_COMMAND_CLOSE_CONNECTION;
 
-    if (!ch341a_pin_is_io(ch341a_swio_gpio))
-        return ERROR_COMMAND_CLOSE_CONNECTION;
-
-    if (!ch341a_pin_is_write(ch341a_swclk_gpio))
-        return ERROR_COMMAND_CLOSE_CONNECTION;
-
     command_print(
         CMD,
         "ch341a nums: "
         "TCK = %d %s, TMS = %d %s, TDI = %d %s,"
-        "TDO = %d %s, TRST = %d %s, SRST = %d %s"
-        "SWIO = %d %s, SWCLK = %d %s",
+        "TDO = %d %s, TRST = %d %s, SRST = %d %s",
         ch341a_tck_gpio,    ch341a_pin_name[ch341a_tck_gpio],
         ch341a_tms_gpio,    ch341a_pin_name[ch341a_tms_gpio],
         ch341a_tdo_gpio,    ch341a_pin_name[ch341a_tdo_gpio],
         ch341a_tdi_gpio,    ch341a_pin_name[ch341a_tdi_gpio],
         ch341a_trst_gpio,   ch341a_pin_name[ch341a_trst_gpio],
-        ch341a_srst_gpio,   ch341a_pin_name[ch341a_srst_gpio],
-        ch341a_swio_gpio,   ch341a_pin_name[ch341a_swio_gpio],
-        ch341a_swclk_gpio,  ch341a_pin_name[ch341a_swclk_gpio]
+        ch341a_srst_gpio,   ch341a_pin_name[ch341a_srst_gpio]
     );
 
     return ERROR_OK;
@@ -317,42 +295,6 @@ COMMAND_HANDLER(ch341a_handle_srst_num_command)
     command_print(
         CMD, "ch341a num: SRST = %d %s",
         ch341a_srst_gpio, ch341a_pin_name[ch341a_srst_gpio]
-    );
-
-    return ERROR_OK;
-}
-
-COMMAND_HANDLER(ch341a_handle_swio_num_command)
-{
-    if (CMD_ARGC != 1)
-        return ERROR_COMMAND_SYNTAX_ERROR;
-
-    ch341a_swio_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
-
-    if (!ch341a_pin_is_io(ch341a_swio_gpio))
-        return ERROR_COMMAND_CLOSE_CONNECTION;
-
-    command_print(
-        CMD, "ch341a num: SWIO = %d %s",
-        ch341a_swio_gpio, ch341a_pin_name[ch341a_swio_gpio]
-    );
-
-    return ERROR_OK;
-}
-
-COMMAND_HANDLER(ch341a_handle_swclk_num_command)
-{
-    if (CMD_ARGC != 1)
-        return ERROR_COMMAND_SYNTAX_ERROR;
-
-    ch341a_swclk_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
-
-    if (!ch341a_pin_is_write(ch341a_swclk_gpio))
-        return ERROR_COMMAND_CLOSE_CONNECTION;
-
-    command_print(
-        CMD, "ch341a num: SWCLK = %d %s",
-        ch341a_swclk_gpio, ch341a_pin_name[ch341a_swclk_gpio]
     );
 
     return ERROR_OK;
@@ -833,18 +775,6 @@ static const struct command_registration ch341a_subcommand_handlers[] = {
         .mode = COMMAND_CONFIG,
         .help = "gpio number for srst.",
         .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
-    }, {
-        .name = "swio_num",
-        .handler = ch341a_handle_swio_num_command,
-        .mode = COMMAND_CONFIG,
-        .help = "gpio number for swio.",
-        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
-    }, {
-        .name = "swclk_num",
-        .handler = ch341a_handle_swclk_num_command,
-        .mode = COMMAND_CONFIG,
-        .help = "gpio number for swclk.",
-        .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     },
     COMMAND_REGISTRATION_DONE
 };
@@ -867,7 +797,7 @@ static struct jtag_interface ch341a_jtag_ops = {
 
 struct adapter_driver ch341a_adapter_driver = {
     .name = "ch341a",
-    .transports = ch341a_transports,
+    .transports = jtag_only,
     .commands = ch341a_command_handlers,
 
     .init = ch341a_init,
