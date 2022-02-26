@@ -79,6 +79,18 @@
 #define CH341A_UIO_CMD_STM_US           0xc0
 #define CH341A_UIO_CMD_STM_END          0x20
 
+#define CH341A_SET_OUTPUT_ERR           0x000100
+#define CH341A_SET_OUTPUT_PEMP          0x000200
+#define CH341A_SET_OUTPUT_INT           0x000400
+#define CH341A_SET_OUTPUT_SLCT          0x000800
+#define CH341A_SET_OUTPUT_WAIT          0x002000
+#define CH341A_SET_OUTPUT_DATAS         0x004000
+#define CH341A_SET_OUTPUT_ADDRS         0x008000
+#define CH341A_SET_OUTPUT_RESET         0x010000
+#define CH341A_SET_OUTPUT_WRITE         0x020000
+#define CH341A_SET_OUTPUT_SCL           0x400000
+#define CH341A_SET_OUTPUT_SDA           0x800000
+
 enum ch341a_pin_num {
     CH341A_PIN_D0       = 0,
     CH341A_PIN_D1       = 1,
