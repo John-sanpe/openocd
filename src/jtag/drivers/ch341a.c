@@ -27,6 +27,10 @@
 #define CH341A_BULK_READ_ENDPOINT       0x82
 #define CH341A_BULK_WRITE_ENDPOINT      0x02
 
+#define CH341A_VENDOR_READ              0xc0
+#define CH341A_VENDOR_WRITE             0x40
+#define CH341A_VENDOR_VERSION           0x5f
+
 #define CH341A_PARA_CMD_R0              0xac
 #define CH341A_PARA_CMD_R1              0xad
 #define CH341A_PARA_CMD_W0              0xa6
@@ -98,8 +102,8 @@ static const char *ch341a_pin_name[] = {
     [CH341A_PIN_D7]     = "D7",
 };
 
-static uint16_t ch341a_vid              = 0x1a86;
-static uint16_t ch341a_pid              = 0x5512;
+static uint16_t ch341a_vid = 0x1a86;
+static uint16_t ch341a_pid = 0x5512;
 static struct libusb_device_handle *ch341a_adapter;
 
 static unsigned int ch341a_tck_gpio     = CH341A_PIN_D3;
@@ -699,6 +703,18 @@ static int ch341a_init(void)
         LOG_ERROR("Failed to get device descriptor");
         return ERROR_JTAG_INIT_FAILED;
     }
+
+    if (libusb_control_transfer(
+            ch341a_adapter, CH341A_VENDOR_READ,
+            CH341A_VENDOR_VERSION, 0, 0,
+            (void *)desc, 2, CH341A_BULK_TIMEOUT
+        ) < 0
+    ) {
+        LOG_ERROR("Failed to get device version");
+        return ERROR_JTAG_INIT_FAILED;
+    }
+
+    LOG_INFO("ch341a chip version: 0x%02x%02x", desc[1], desc[0]);
 
     ch341a_port_buffer = malloc(ch341a_port_buffer_size);
     if (!ch341a_port_buffer) {
