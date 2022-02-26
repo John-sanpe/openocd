@@ -100,13 +100,14 @@ static const char *ch341a_pin_name[] = {
 
 static uint16_t ch341a_vid              = 0x1a86;
 static uint16_t ch341a_pid              = 0x5512;
+static struct libusb_device_handle *ch341a_adapter;
+
 static unsigned int ch341a_tck_gpio     = CH341A_PIN_D3;
 static unsigned int ch341a_tms_gpio     = CH341A_PIN_D0;
 static unsigned int ch341a_tdo_gpio     = CH341A_PIN_D7;
 static unsigned int ch341a_tdi_gpio     = CH341A_PIN_D5;
 static unsigned int ch341a_trst_gpio    = CH341A_PIN_D1;
 static unsigned int ch341a_srst_gpio    = CH341A_PIN_D2;
-static struct libusb_device_handle *ch341a_adapter;
 
 static uint8_t *ch341a_port_buffer;
 static unsigned long ch341a_port_buffer_curr;
@@ -174,6 +175,9 @@ COMMAND_HANDLER(ch341a_handle_jtag_nums_command)
         return ERROR_COMMAND_CLOSE_CONNECTION;
 
     if (!ch341a_pin_is_write(ch341a_trst_gpio))
+        return ERROR_COMMAND_CLOSE_CONNECTION;
+
+    if (!ch341a_pin_is_write(ch341a_srst_gpio))
         return ERROR_COMMAND_CLOSE_CONNECTION;
 
     command_print(
