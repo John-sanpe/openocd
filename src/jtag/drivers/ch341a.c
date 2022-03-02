@@ -344,12 +344,12 @@ static int ch341a_port_direction(uint8_t dire)
 
 static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
 {
-    unsigned int xfer, xfer_max = (CH341A_PACKET_LENGTH - (read + 1)) / 2;
+    unsigned int xfer, xfer_max = CH341A_PACKET_LENGTH / (read + 1);
     int ret, received;
 
     for (received = 0; (xfer = (len < xfer_max ? len : xfer_max)); len -= xfer, buff += xfer) {
         uint8_t transfer[CH341A_PACKET_LENGTH];
-        unsigned int xfer_send = xfer * (read + 1) + 2;
+        unsigned int xfer_send = xfer * (read + 1);
         unsigned int count;
         int xfer_len;
 
