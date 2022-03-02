@@ -769,7 +769,7 @@ static const struct command_registration ch341a_subcommand_handlers[] = {
         .name = "jtag_nums",
         .handler = ch341a_handle_jtag_nums_command,
         .mode = COMMAND_CONFIG,
-        .help = "gpio numbers for tck, tms, tdo, tdi, trst, srst, swio, swclk.",
+        .help = "gpio numbers for tck, tms, tdo, tdi, trst, srst.",
         .usage = "<D0|D1|D2|D3|D4|D5|D6|D7>",
     }, {
         .name = "tck_num",
