@@ -344,14 +344,14 @@ static int ch341a_port_direction(uint8_t dire)
 
 static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
 {
-    unsigned int xfer, xfer_max = CH341A_PACKET_LENGTH / (read + 1);
+    uint8_t transfer[CH341A_PACKET_LENGTH + 2];
+    unsigned int xfer;
     int ret, received;
 
-    for (received = 0; (xfer = (len < xfer_max ? len : xfer_max)); len -= xfer, buff += xfer) {
-        uint8_t transfer[CH341A_PACKET_LENGTH];
-        unsigned int xfer_send = xfer * (read + 1);
+    for (received = 0; (xfer = MIN(len, CH341A_PACKET_LENGTH / (read + 1))); len -= xfer, buff += xfer) {
+        unsigned int xfer_send = xfer * (read + 1) + 2;
         unsigned int count;
-        int xfer_len;
+        int xfer_recv;
 
         transfer[0] = CH341A_CMD_UIO_STREAM;
         transfer[xfer_send - 1] = CH341A_UIO_CMD_STM_END;
@@ -369,10 +369,10 @@ static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
 
         ret = jtag_libusb_bulk_write(
             ch341a_adapter, CH341A_BULK_WRITE_ENDPOINT,
-            (void *)transfer, xfer_send, CH341A_BULK_TIMEOUT, &xfer_len
+            (void *)transfer, xfer_send, CH341A_BULK_TIMEOUT, &xfer_recv
         );
 
-        if (ret < 0 || xfer_len < 0) {
+        if (ret < 0 || xfer_recv < 0) {
             LOG_ERROR("ch341a_port_transfer: usb bulk write failed");
             exit(1);
         }
@@ -380,14 +380,14 @@ static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
         if (read) {
             ret = jtag_libusb_bulk_read(
                 ch341a_adapter, CH341A_BULK_READ_ENDPOINT,
-                (void *)buff, xfer, CH341A_BULK_TIMEOUT, &xfer_len
+                (void *)buff, xfer, CH341A_BULK_TIMEOUT, &xfer_recv
             );
 
-            if (ret < 0 || xfer_len < 0) {
+            if (ret < 0 || xfer_recv < 0) {
                 LOG_ERROR("ch341a_port_transfer: usb bulk read failed");
                 exit(1);
             }
-            received += xfer_len;
+            received += xfer_recv;
         }
     }
 
