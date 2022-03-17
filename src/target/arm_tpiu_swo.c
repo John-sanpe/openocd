@@ -886,7 +886,8 @@ static int arm_tpiu_swo_create(Jim_Interp *interp, struct arm_tpiu_swo_object *o
 	/* does this command exist? */
 	cmd = Jim_GetCommand(interp, Jim_NewStringObj(interp, obj->name, -1), JIM_NONE);
 	if (cmd) {
-		Jim_SetResultFormatted(interp, "Command: %s Exists", obj->name);
+		Jim_SetResultFormatted(interp, "cannot create TPIU object because a command with name '%s' already exists",
+			obj->name);
 		return JIM_ERR;
 	}
 
@@ -915,7 +916,7 @@ static int jim_arm_tpiu_swo_create(Jim_Interp *interp, int argc, Jim_Obj *const 
 	struct jim_getopt_info goi;
 	jim_getopt_setup(&goi, interp, argc - 1, argv + 1);
 	if (goi.argc < 1) {
-		Jim_WrongNumArgs(goi.interp, 1, goi.argv, "?name? ..options...");
+		Jim_WrongNumArgs(interp, 1, argv, "name ?option option ...?");
 		return JIM_ERR;
 	}
 
@@ -1160,7 +1161,7 @@ static const struct command_registration arm_tpiu_swo_subcommand_handlers[] = {
 		.name = "create",
 		.mode = COMMAND_ANY,
 		.jim_handler = jim_arm_tpiu_swo_create,
-		.usage = "name [-dap dap] [-ap-num num] [-address baseaddr]",
+		.usage = "name [-dap dap] [-ap-num num] [-baseaddr baseaddr]",
 		.help = "Creates a new TPIU or SWO object",
 	},
 	{
