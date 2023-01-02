@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright(c) 2021 John Sanpe <sanpeqf@gmail.com>
+ * Copyright(c) 2022-2023 John Sanpe <sanpeqf@gmail.com>
  */
 
 /* project specific includes */
@@ -400,8 +400,12 @@ static int syncbb_state_move(int skip)
 
 	for (count = skip; count < tms_count; ++count) {
 		tms = (tms_scan >> count) & 0x01;
-		if ((retval = ch341a_jtag_write(0, tms, 0)) ||
-			(retval = ch341a_jtag_write(1, tms, 0)))
+		retval = ch341a_jtag_write(0, tms, 0);
+		if (retval)
+			return retval;
+
+		retval = ch341a_jtag_write(1, tms, 0);
+		if (retval)
 			return retval;
 	}
 
@@ -424,8 +428,12 @@ static int syncbb_execute_tms(struct jtag_command *cmd)
 
 	for (unsigned int i = 0; i < num_bits; i++) {
 		tms = ((bits[i / 8] >> (i % 8)) & 1);
-		if ((retval = ch341a_jtag_write(0, tms, 0)) ||
-			(retval = ch341a_jtag_write(1, tms, 0)))
+		retval = ch341a_jtag_write(0, tms, 0);
+		if (retval)
+			return retval;
+
+		retval = ch341a_jtag_write(1, tms, 0);
+		if (retval)
 			return retval;
 	}
 
@@ -451,8 +459,12 @@ static int syncbb_path_move(struct pathmove_command *cmd)
 			return ERROR_FAIL;
 		}
 
-		if ((retval = ch341a_jtag_write(0, tms, 0)) ||
-			(retval = ch341a_jtag_write(1, tms, 0)))
+		retval = ch341a_jtag_write(0, tms, 0);
+		if (retval)
+			return retval;
+
+		retval = ch341a_jtag_write(1, tms, 0);
+		if (retval)
 			return retval;
 
 		tap_set_state(cmd->path[state_count]);
@@ -474,14 +486,22 @@ static int syncbb_runtest(unsigned int cycles)
 	int retval;
 
 	if (tap_get_state() != TAP_IDLE) {
-		if ((retval = syncbb_end_state(TAP_IDLE)) ||
-			(retval = syncbb_state_move(0)))
+		retval = syncbb_end_state(TAP_IDLE);
+		if (retval)
+			return retval;
+
+		retval = syncbb_state_move(0);
+		if (retval)
 			return retval;
 	}
 
 	for (count = 0; count < cycles; ++count) {
-		if ((retval = ch341a_jtag_write(0, 0, 0)) ||
-			(retval = ch341a_jtag_write(1, 0, 0)))
+		retval = ch341a_jtag_write(0, 0, 0);
+		if (retval)
+			return retval;
+
+		retval = ch341a_jtag_write(1, 0, 0);
+		if (retval)
 			return retval;
 	}
 
@@ -506,8 +526,12 @@ static int syncbb_stableclocks(unsigned int cycles)
 	int retval;
 
 	for (count = 0; count < cycles; ++count) {
-		if ((retval = ch341a_jtag_write(1, tms, 0)) ||
-			(retval = ch341a_jtag_write(0, tms, 0)))
+		retval = ch341a_jtag_write(1, tms, 0);
+		if (retval)
+			return retval;
+
+		retval = ch341a_jtag_write(0, tms, 0);
+		if (retval)
 			return retval;
 	}
 
@@ -548,8 +572,12 @@ static int syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int s
 		tms = bit_cnt == scan_size - 1;
 		tdi = (type != SCAN_IN) && (buffer[bytec] & bcval);
 
-		if ((retval = ch341a_jtag_write(0, tms, tdi)) ||
-			(retval = ch341a_jtag_write(1, tms, tdi)))
+		retval = ch341a_jtag_write(0, tms, tdi);
+		if (retval)
+			return retval;
+
+		retval = ch341a_jtag_write(1, tms, tdi);
+		if (retval)
 			return retval;
 	}
 
@@ -606,8 +634,12 @@ static int ch341a_jtag_execute_queue(void)
 			case JTAG_RUNTEST:
 				LOG_DEBUG_IO("runtest %i cycles, end in %s", cmd->cmd.runtest->num_cycles,
 							 tap_state_name(cmd->cmd.runtest->end_state));
-				if ((retval = syncbb_end_state(cmd->cmd.runtest->end_state)) ||
-					(retval = syncbb_runtest(cmd->cmd.runtest->num_cycles)))
+				retval = syncbb_end_state(cmd->cmd.runtest->end_state);
+				if (retval)
+					return retval;
+
+				retval = syncbb_runtest(cmd->cmd.runtest->num_cycles);
+				if (retval)
 					return retval;
 				break;
 
@@ -619,14 +651,18 @@ static int ch341a_jtag_execute_queue(void)
 
 			case JTAG_TLR_RESET:
 				LOG_DEBUG_IO("statemove end in %s", tap_state_name(cmd->cmd.statemove->end_state));
-				if ((retval = syncbb_end_state(cmd->cmd.statemove->end_state)) ||
-					(retval = syncbb_state_move(0)))
+				retval = syncbb_end_state(cmd->cmd.statemove->end_state);
+				if (retval)
+					return retval;
+
+				retval = syncbb_state_move(0);
+				if (retval)
 					return retval;
 				break;
 
 			case JTAG_PATHMOVE:
 				LOG_DEBUG_IO("pathmove: %i states, end in %s", cmd->cmd.pathmove->num_states,
-					tap_state_name(cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]));
+							 tap_state_name(cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]));
 				retval = syncbb_path_move(cmd->cmd.pathmove);
 				if (retval)
 					return retval;
@@ -634,18 +670,20 @@ static int ch341a_jtag_execute_queue(void)
 
 			case JTAG_SCAN:
 				LOG_DEBUG_IO("%s scan end in %s",  (cmd->cmd.scan->ir_scan) ? "IR" : "DR",
-					tap_state_name(cmd->cmd.scan->end_state));
+							 tap_state_name(cmd->cmd.scan->end_state));
 				retval = syncbb_end_state(cmd->cmd.scan->end_state);
 				if (retval)
 					return retval;
+
 				scan_size = jtag_build_buffer(cmd->cmd.scan, &buffer);
 				type = jtag_scan_type(cmd->cmd.scan);
-				if ((retval = syncbb_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size)) ||
-					(retval = jtag_read_buffer(buffer, cmd->cmd.scan))) {
-					free(buffer);
-					return retval;
-				}
+				retval = syncbb_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size);
+				if (!retval)
+					retval = jtag_read_buffer(buffer, cmd->cmd.scan);
+
 				free(buffer);
+				if (retval)
+					return retval;
 				break;
 
 			case JTAG_SLEEP:
@@ -685,7 +723,7 @@ static int ch341a_init(void)
 	if (jtag_libusb_open(avids, apids, &ch341a_adapter, NULL)) {
 		const char *ch341a_serial_desc = adapter_get_required_serial();
 		LOG_ERROR("ch341a not found: vid=%04x, pid=%04x, serial=%s\n",
-			ch341a_vid, ch341a_pid, (!ch341a_serial_desc) ? "[any]" : ch341a_serial_desc);
+				  ch341a_vid, ch341a_pid, (!ch341a_serial_desc) ? "[any]" : ch341a_serial_desc);
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
