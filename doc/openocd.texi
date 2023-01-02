@@ -2481,7 +2481,7 @@ Specifies the @var{serial_string} of the adapter to use.
 If this command is not specified, serial strings are not checked.
 Only the following adapter drivers use the serial string from this command:
 aice (aice_usb), arm-jtag-ew, cmsis_dap, ft232r, ftdi, hla (stlink, ti-icdi), jlink, kitprog, opendus,
-openjtag, osbdm, presto, rlink, st-link, usb_blaster (ublast2), usbprog, vsllink, xds110.
+openjtag, osbdm, presto, rlink, st-link, usb_blaster (ublast2), usbprog, vsllink, xds110, ch341a.
 @end deffn
 
 @section Interface Drivers
@@ -2789,6 +2789,69 @@ When kernel driver reattaches, serial port should continue to work.
 Value 0xFFFF disables sending control word and serial port,
 then kernel driver will not reattach.
 If not specified, default 0xFFFF is used.
+@end deffn
+
+@end deffn
+
+@deffn {Interface Driver} {ch341a}
+This driver is implementing synchronous bitbang mode of an WCH CH341A,
+CH341H and similar USB Parallel/SPI bridge ICs by reusing UIO signals as GPIO.
+
+List of connections (default physical pin numbers for CH341A in 28-pin SOP package):
+@itemize @minus
+@item D3(18) - TCK
+@item D0(15) - TMS
+@item D7(22) - TDI
+@item D5(20) - TDO
+@item D1(16) - TRST
+@item D2(17) - SRST
+@end itemize
+
+List of connections (default physical pin numbers for CH341H in 20-pin SSOP package):
+@itemize @minus
+@item DCK(13) - TCK
+@item CS0(10) - TMS
+@item DIN(17) - TDI
+@item DOUT(15) - TDO
+@item CS1(11) - TRST
+@item CS2(12) - SRST
+@end itemize
+
+These interfaces have several commands, used to configure the driver
+before initializing the JTAG scan chain:
+
+@deffn {Config Command} {ch341a vid_pid} @var{vid} @var{pid}
+The vendor ID and product ID of the adapter. If not specified, default
+0x1a86:0x5512 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a jtag_nums} @var{tck} @var{tms} @var{tdi} @var{tdo} @var{trst} @var{srst}
+Set four JTAG GPIO numbers at once.
+If not specified, default D3 D0 D7 D5 D1 D2 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a tck_num} @var{tck}
+Set TCK GPIO number. If not specified, default D3 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a tms_num} @var{tms}
+Set TMS GPIO number. If not specified, default D0 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a tdi_num} @var{tdi}
+Set TDI GPIO number. If not specified, default D7 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a tdo_num} @var{tdo}
+Set TDO GPIO number. If not specified, default D5 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a trst_num} @var{trst}
+Set TRST GPIO number. If not specified, default D1 is used.
+@end deffn
+
+@deffn {Config Command} {ch341a srst_num} @var{srst}
+Set SRST GPIO number. If not specified, default D2 is used.
 @end deffn
 
 @end deffn
