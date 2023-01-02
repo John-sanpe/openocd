@@ -15,81 +15,23 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define CH341A_USB_VENDOR               0x1a86
-#define CH341A_USB_PRODUCT              0x5512
+#define CH341A_USB_VENDOR           	0x1a86
+#define CH341A_USB_PRODUCT          	0x5512
 
-#define CH341A_PACKET_LENGTH            32
-#define CH341A_MAX_PACKETS              256
-#define CH341A_BULK_TIMEOUT             1000
+#define CH341A_PACKET_LENGTH        	32U
+#define CH341A_MAX_PACKETS          	256U
+#define CH341A_BULK_TIMEOUT         	1000U
 
-#define CH341A_INTER_READ_ENDPOINT      0x81
-#define CH341A_INTER_WRITE_ENDPOINT     0x01
-#define CH341A_BULK_READ_ENDPOINT       0x82
-#define CH341A_BULK_WRITE_ENDPOINT      0x02
+#define CH341A_BULK_READ_ENDPOINT   	0x82
+#define CH341A_BULK_WRITE_ENDPOINT  	0x02
+#define CH341A_VENDOR_READ          	0xc0
+#define CH341A_VENDOR_VERSION       	0x5f
 
-#define CH341A_VENDOR_READ              0xc0
-#define CH341A_VENDOR_WRITE             0x40
-#define CH341A_VENDOR_VERSION           0x5f
-
-#define CH341A_PARA_CMD_R0              0xac
-#define CH341A_PARA_CMD_R1              0xad
-#define CH341A_PARA_CMD_W0              0xa6
-#define CH341A_PARA_CMD_W1              0xa7
-#define CH341A_PARA_CMD_STS             0xa0
-
-#define CH341A_PARA_MODE_EPP            0x00
-#define CH341A_PARA_MODE_EPP17          0x00
-#define CH341A_PARA_MODE_EPP19          0x01
-#define CH341A_PARA_MODE_MEM            0x02
-#define CH341A_PARA_MODE_ECP            0x03
-
-#define CH341A_CMD_SET_OUTPUT           0xa1
-#define CH341A_CMD_IO_ADDR              0xa2
-#define CH341A_CMD_PRINT_OUT            0xa3
-#define CH341A_CMD_PWM_OUT              0xa4
-#define CH341A_CMD_SHORT_PKT            0xa5
-#define CH341A_CMD_SPI_STREAM           0xa8
-#define CH341A_CMD_SIO_STREAM           0xa9
-#define CH341A_CMD_I2C_STREAM           0xaa
-#define CH341A_CMD_UIO_STREAM           0xab
-
-#define CH341A_IO_CMD_ADDR_W            0x00
-#define CH341A_IO_CMD_ADDR_R            0x80
-
-#define CH341A_I2C_CMD_STM_STA          0x74
-#define CH341A_I2C_CMD_STM_STO          0x75
-#define CH341A_I2C_CMD_STM_OUT          0x80
-#define CH341A_I2C_CMD_STM_IN           0xc0
-#define CH341A_I2C_CMD_STM_MAX          0x20
-#define CH341A_I2C_CMD_STM_SET          0x60
-#define CH341A_I2C_CMD_STM_US           0x40
-#define CH341A_I2C_CMD_STM_MS           0x50
-#define CH341A_I2C_CMD_STM_DLY          0x0f
-#define CH341A_I2C_CMD_STM_END          0x00
-
-#define CH341A_I2C_STM_20K              0x00
-#define CH341A_I2C_STM_100K             0x01
-#define CH341A_I2C_STM_400K             0x02
-#define CH341A_I2C_STM_750K             0x03
-#define CH341A_SPI_STM_DBL              0x04
-
-#define CH341A_UIO_CMD_STM_IN           0x00
-#define CH341A_UIO_CMD_STM_DIR          0x40
-#define CH341A_UIO_CMD_STM_OUT          0x80
-#define CH341A_UIO_CMD_STM_US           0xc0
-#define CH341A_UIO_CMD_STM_END          0x20
-
-#define CH341A_SET_OUTPUT_ERR           0x000100
-#define CH341A_SET_OUTPUT_PEMP          0x000200
-#define CH341A_SET_OUTPUT_INT           0x000400
-#define CH341A_SET_OUTPUT_SLCT          0x000800
-#define CH341A_SET_OUTPUT_WAIT          0x002000
-#define CH341A_SET_OUTPUT_DATAS         0x004000
-#define CH341A_SET_OUTPUT_ADDRS         0x008000
-#define CH341A_SET_OUTPUT_RESET         0x010000
-#define CH341A_SET_OUTPUT_WRITE         0x020000
-#define CH341A_SET_OUTPUT_SCL           0x400000
-#define CH341A_SET_OUTPUT_SDA           0x800000
+#define CH341A_CMD_UIO_STREAM       	0xab
+#define CH341A_UIO_CMD_STM_IN       	0x00
+#define CH341A_UIO_CMD_STM_DIR      	0x40
+#define CH341A_UIO_CMD_STM_OUT      	0x80
+#define CH341A_UIO_CMD_STM_END      	0x20
 
 enum ch341a_pin_num {
 	CH341A_PIN_D0       = 0,
@@ -114,16 +56,16 @@ static const char * const ch341a_pin_name[] = {
 	[CH341A_PIN_D7]     = "D7",
 };
 
-static uint16_t ch341a_vid = 0x1a86;
-static uint16_t ch341a_pid = 0x5512;
+static uint16_t ch341a_vid = CH341A_USB_VENDOR;
+static uint16_t ch341a_pid = CH341A_USB_PRODUCT;
 static struct libusb_device_handle *ch341a_adapter;
 
-static unsigned int ch341a_tck_gpio     = CH341A_PIN_D3;
-static unsigned int ch341a_tms_gpio     = CH341A_PIN_D0;
-static unsigned int ch341a_tdo_gpio     = CH341A_PIN_D7;
-static unsigned int ch341a_tdi_gpio     = CH341A_PIN_D5;
-static unsigned int ch341a_trst_gpio    = CH341A_PIN_D1;
-static unsigned int ch341a_srst_gpio    = CH341A_PIN_D2;
+static unsigned int ch341a_tck_gpio  = CH341A_PIN_D3;
+static unsigned int ch341a_tms_gpio  = CH341A_PIN_D0;
+static unsigned int ch341a_tdo_gpio  = CH341A_PIN_D7;
+static unsigned int ch341a_tdi_gpio  = CH341A_PIN_D5;
+static unsigned int ch341a_trst_gpio = CH341A_PIN_D1;
+static unsigned int ch341a_srst_gpio = CH341A_PIN_D2;
 
 static uint8_t *ch341a_port_buffer;
 static unsigned long ch341a_port_buffer_curr;
