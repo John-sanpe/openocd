@@ -15,23 +15,23 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define CH341A_USB_VENDOR           	0x1a86
-#define CH341A_USB_PRODUCT          	0x5512
+#define CH341A_USB_VENDOR               0x1a86
+#define CH341A_USB_PRODUCT              0x5512
 
-#define CH341A_PACKET_LENGTH        	32U
-#define CH341A_MAX_PACKETS          	256U
-#define CH341A_BULK_TIMEOUT         	1000U
+#define CH341A_PACKET_LENGTH            32U
+#define CH341A_MAX_PACKETS              256U
+#define CH341A_BULK_TIMEOUT             1000U
 
-#define CH341A_BULK_READ_ENDPOINT   	0x82
-#define CH341A_BULK_WRITE_ENDPOINT  	0x02
-#define CH341A_VENDOR_READ          	0xc0
-#define CH341A_VENDOR_VERSION       	0x5f
+#define CH341A_BULK_READ_ENDPOINT       0x82
+#define CH341A_BULK_WRITE_ENDPOINT      0x02
+#define CH341A_VENDOR_READ              0xc0
+#define CH341A_VENDOR_VERSION           0x5f
 
-#define CH341A_CMD_UIO_STREAM       	0xab
-#define CH341A_UIO_CMD_STM_IN       	0x00
-#define CH341A_UIO_CMD_STM_DIR      	0x40
-#define CH341A_UIO_CMD_STM_OUT      	0x80
-#define CH341A_UIO_CMD_STM_END      	0x20
+#define CH341A_CMD_UIO_STREAM           0xab
+#define CH341A_UIO_CMD_STM_IN           0x00
+#define CH341A_UIO_CMD_STM_DIR          0x40
+#define CH341A_UIO_CMD_STM_OUT          0x80
+#define CH341A_UIO_CMD_STM_END          0x20
 
 enum ch341a_pin_num {
 	CH341A_PIN_D0       = 0,
@@ -114,12 +114,12 @@ COMMAND_HANDLER(ch341a_handle_jtag_nums_command)
 	if (CMD_ARGC != 8)
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
-	ch341a_tck_gpio     = ch341a_name_to_pin(CMD_ARGV[0]);
-	ch341a_tms_gpio     = ch341a_name_to_pin(CMD_ARGV[1]);
-	ch341a_tdo_gpio     = ch341a_name_to_pin(CMD_ARGV[2]);
-	ch341a_tdi_gpio     = ch341a_name_to_pin(CMD_ARGV[3]);
-	ch341a_trst_gpio    = ch341a_name_to_pin(CMD_ARGV[4]);
-	ch341a_srst_gpio    = ch341a_name_to_pin(CMD_ARGV[5]);
+	ch341a_tck_gpio  = ch341a_name_to_pin(CMD_ARGV[0]);
+	ch341a_tms_gpio  = ch341a_name_to_pin(CMD_ARGV[1]);
+	ch341a_tdo_gpio  = ch341a_name_to_pin(CMD_ARGV[2]);
+	ch341a_tdi_gpio  = ch341a_name_to_pin(CMD_ARGV[3]);
+	ch341a_trst_gpio = ch341a_name_to_pin(CMD_ARGV[4]);
+	ch341a_srst_gpio = ch341a_name_to_pin(CMD_ARGV[5]);
 
 	if (!ch341a_pin_is_write(ch341a_tck_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
@@ -260,13 +260,12 @@ static int ch341a_port_direction(uint8_t dire)
 
 	ret = jtag_libusb_bulk_write(ch341a_adapter, CH341A_BULK_WRITE_ENDPOINT,
 								 (void *)transfer, 3, CH341A_BULK_TIMEOUT, &received);
-
 	if (ret < 0 || received < 0) {
 		LOG_ERROR("%s: usb bulk write failed", __func__);
-		exit(1);
+		return ERROR_FAIL;
 	}
 
-	return received;
+	return ERROR_OK;
 }
 
 static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
@@ -295,19 +294,17 @@ static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
 
 		ret = jtag_libusb_bulk_write(ch341a_adapter, CH341A_BULK_WRITE_ENDPOINT,
 									 (void *)transfer, xfer_send, CH341A_BULK_TIMEOUT, &xfer_recv);
-
 		if (ret < 0 || xfer_recv < 0) {
 			LOG_ERROR("%s: usb bulk write failed", __func__);
-			exit(1);
+			return ERROR_WAIT;
 		}
 
 		if (read) {
 			ret = jtag_libusb_bulk_read(ch341a_adapter, CH341A_BULK_READ_ENDPOINT,
 										(void *)buff, xfer, CH341A_BULK_TIMEOUT, &xfer_recv);
-
 			if (ret < 0 || xfer_recv < 0) {
 				LOG_ERROR("%s: usb bulk read failed", __func__);
-				exit(1);
+				return ERROR_WAIT;
 			}
 			received += xfer_recv;
 		}
@@ -316,10 +313,14 @@ static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
 	return received;
 }
 
-static void ch341a_port_buffer_flush(bool read)
+static int ch341a_port_buffer_flush(bool read)
 {
-	ch341a_port_transfer(ch341a_port_buffer, ch341a_port_buffer_curr, read);
+	int retval;
+
+	retval = ch341a_port_transfer(ch341a_port_buffer, ch341a_port_buffer_curr, read);
 	ch341a_port_buffer_curr = 0;
+
+	return retval;
 }
 
 static void ch341a_port_buffer_increase(unsigned long new_size)
@@ -338,7 +339,7 @@ static void ch341a_port_buffer_increase(unsigned long new_size)
 	ch341a_port_buffer_size = new_size;
 }
 
-static inline void ch341a_jtag_write(bool tck, bool tms, bool tdi)
+static inline int ch341a_jtag_write(bool tck, bool tms, bool tdi)
 {
 	uint8_t value = 0xff;
 
@@ -349,15 +350,17 @@ static inline void ch341a_jtag_write(bool tck, bool tms, bool tdi)
 	ch341a_port_buffer_increase(ch341a_port_buffer_curr);
 	if (ch341a_port_buffer_curr >= ch341a_port_buffer_size) {
 		LOG_ERROR("%s: buffer overflow", __func__);
-		exit(1);
+		return ERROR_BUF_TOO_SMALL;
 	}
 
 	ch341a_port_buffer[ch341a_port_buffer_curr++] = value;
+	return ERROR_OK;
 }
 
-static inline void ch341a_jtag_reset(bool trst, bool srst)
+static inline int ch341a_jtag_reset(bool trst, bool srst)
 {
 	uint8_t value = 0xff;
+	int retval;
 
 	value = trst ? value & ~(1 << ch341a_trst_gpio) : value | (1 << ch341a_trst_gpio);
 	value = srst ? value & ~(1 << ch341a_srst_gpio) : value | (1 << ch341a_srst_gpio);
@@ -365,62 +368,76 @@ static inline void ch341a_jtag_reset(bool trst, bool srst)
 	ch341a_port_buffer_increase(ch341a_port_buffer_curr);
 	if (ch341a_port_buffer_curr >= ch341a_port_buffer_size) {
 		LOG_ERROR("%s: buffer overflow", __func__);
-		exit(1);
+		return ERROR_BUF_TOO_SMALL;
 	}
 
 	ch341a_port_buffer[ch341a_port_buffer_curr++] = value;
-	ch341a_port_buffer_flush(false);
+	retval = ch341a_port_buffer_flush(false);
+	if (retval < 0)
+		return retval;
+
+	return ERROR_OK;
 }
 
-static void syncbb_end_state(tap_state_t state)
+static int syncbb_end_state(tap_state_t state)
 {
 	if (tap_is_state_stable(state)) {
 		tap_set_end_state(state);
-	} else {
-		LOG_ERROR("BUG: %i is not a valid end state", state);
-		exit(-1);
+		return ERROR_OK;
 	}
+
+	LOG_ERROR("BUG: %i is not a valid end state", state);
+	return ERROR_FAIL;
 }
 
-static void syncbb_state_move(int skip)
+static int syncbb_state_move(int skip)
 {
 	uint8_t tms_scan = tap_get_tms_path(tap_get_state(), tap_get_end_state());
 	int tms_count = tap_get_tms_path_len(tap_get_state(), tap_get_end_state());
 	bool tms = 0;
 	int count;
+	int retval;
 
 	for (count = skip; count < tms_count; ++count) {
 		tms = (tms_scan >> count) & 0x01;
-		ch341a_jtag_write(0, tms, 0);
-		ch341a_jtag_write(1, tms, 0);
+		if ((retval = ch341a_jtag_write(0, tms, 0)) ||
+			(retval = ch341a_jtag_write(1, tms, 0)))
+			return retval;
 	}
 
-	ch341a_jtag_write(0, tms, 0);
+	retval = ch341a_jtag_write(0, tms, 0);
+	if (retval)
+		return retval;
+
 	tap_set_state(tap_get_end_state());
+	return ERROR_OK;
 }
 
-static void syncbb_execute_tms(struct jtag_command *cmd)
+static int syncbb_execute_tms(struct jtag_command *cmd)
 {
 	unsigned int num_bits = cmd->cmd.tms->num_bits;
 	const uint8_t *bits = cmd->cmd.tms->bits;
 	bool tms = 0;
+	int retval;
 
 	LOG_DEBUG_IO("TMS: %d bits", num_bits);
 
 	for (unsigned int i = 0; i < num_bits; i++) {
 		tms = ((bits[i / 8] >> (i % 8)) & 1);
-		ch341a_jtag_write(0, tms, 0);
-		ch341a_jtag_write(1, tms, 0);
+		if ((retval = ch341a_jtag_write(0, tms, 0)) ||
+			(retval = ch341a_jtag_write(1, tms, 0)))
+			return retval;
 	}
 
-	ch341a_jtag_write(0, tms, 0);
+	return ch341a_jtag_write(0, tms, 0);
 }
 
-static void syncbb_path_move(struct pathmove_command *cmd)
+static int syncbb_path_move(struct pathmove_command *cmd)
 {
 	int num_states = cmd->num_states;
 	int state_count = 0;
 	bool tms = 0;
+	int retval;
 
 	while (num_states--) {
 		if (tap_state_transition(tap_get_state(), false) == cmd->path[state_count]) {
@@ -431,66 +448,93 @@ static void syncbb_path_move(struct pathmove_command *cmd)
 			LOG_ERROR("BUG: %s -> %s isn't a valid TAP transition",
 				tap_state_name(tap_get_state()),
 				tap_state_name(cmd->path[state_count]));
-			exit(-1);
+			return ERROR_FAIL;
 		}
 
-		ch341a_jtag_write(0, tms, 0);
-		ch341a_jtag_write(1, tms, 0);
+		if ((retval = ch341a_jtag_write(0, tms, 0)) ||
+			(retval = ch341a_jtag_write(1, tms, 0)))
+			return retval;
+
 		tap_set_state(cmd->path[state_count]);
 		state_count++;
 	}
 
-	ch341a_jtag_write(0, tms, 0);
+	retval = ch341a_jtag_write(0, tms, 0);
+	if (retval)
+		return retval;
+
 	tap_set_end_state(tap_get_state());
+	return ERROR_OK;
 }
 
-static void syncbb_runtest(unsigned int cycles)
+static int syncbb_runtest(unsigned int cycles)
 {
 	tap_state_t saved_end_state = tap_get_end_state();
 	unsigned int count;
+	int retval;
 
 	if (tap_get_state() != TAP_IDLE) {
-		syncbb_end_state(TAP_IDLE);
-		syncbb_state_move(0);
+		if ((retval = syncbb_end_state(TAP_IDLE)) ||
+			(retval = syncbb_state_move(0)))
+			return retval;
 	}
 
 	for (count = 0; count < cycles; ++count) {
-		ch341a_jtag_write(0, 0, 0);
-		ch341a_jtag_write(1, 0, 0);
+		if ((retval = ch341a_jtag_write(0, 0, 0)) ||
+			(retval = ch341a_jtag_write(1, 0, 0)))
+			return retval;
 	}
 
-	ch341a_jtag_write(0, 0, 0);
-	syncbb_end_state(saved_end_state);
+	retval = ch341a_jtag_write(0, 0, 0);
+	if (retval)
+		return retval;
+
+	retval = syncbb_end_state(saved_end_state);
+	if (retval)
+		return retval;
 
 	if (tap_get_state() != tap_get_end_state())
-		syncbb_state_move(0);
+		retval = syncbb_state_move(0);
+
+	return retval;
 }
 
-static void syncbb_stableclocks(unsigned int cycles)
+static int syncbb_stableclocks(unsigned int cycles)
 {
 	bool tms = tap_get_state() == TAP_RESET;
 	unsigned int count;
+	int retval;
 
 	for (count = 0; count < cycles; ++count) {
-		ch341a_jtag_write(1, tms, 0);
-		ch341a_jtag_write(0, tms, 0);
+		if ((retval = ch341a_jtag_write(1, tms, 0)) ||
+			(retval = ch341a_jtag_write(0, tms, 0)))
+			return retval;
 	}
+
+	return ERROR_OK;
 }
 
-static void syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int scan_size)
+static int syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int scan_size)
 {
 	tap_state_t saved_end_state = tap_get_end_state();
 	unsigned long bit_base;
-	int bit_cnt;
+	int bit_cnt, retval;
 
 	if (!((!ir_scan && (tap_get_state() == TAP_DRSHIFT)) || (ir_scan && (tap_get_state() == TAP_IRSHIFT)))) {
 		if (ir_scan)
-			syncbb_end_state(TAP_IRSHIFT);
+			retval = syncbb_end_state(TAP_IRSHIFT);
 		else
-			syncbb_end_state(TAP_DRSHIFT);
+			retval = syncbb_end_state(TAP_DRSHIFT);
+		if (retval)
+			return retval;
 
-		syncbb_state_move(0);
-		syncbb_end_state(saved_end_state);
+		retval = syncbb_state_move(0);
+		if (retval)
+			return retval;
+
+		retval = syncbb_end_state(saved_end_state);
+		if (retval)
+			return retval;
 	}
 
 	bit_base = ch341a_port_buffer_curr;
@@ -504,14 +548,20 @@ static void syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int 
 		tms = bit_cnt == scan_size - 1;
 		tdi = (type != SCAN_IN) && (buffer[bytec] & bcval);
 
-		ch341a_jtag_write(0, tms, tdi);
-		ch341a_jtag_write(1, tms, tdi);
+		if ((retval = ch341a_jtag_write(0, tms, tdi)) ||
+			(retval = ch341a_jtag_write(1, tms, tdi)))
+			return retval;
 	}
 
-	if (tap_get_state() != tap_get_end_state())
-		syncbb_state_move(1);
+	if (tap_get_state() != tap_get_end_state()) {
+		retval = syncbb_state_move(1);
+		if (retval)
+			return retval;
+	}
 
-	ch341a_port_buffer_flush(type != SCAN_OUT);
+	retval = ch341a_port_buffer_flush(type != SCAN_OUT);
+	if (retval < 0)
+		return retval;
 
 	if (type != SCAN_OUT) {
 		for (bit_cnt = 0; bit_cnt < scan_size; ++bit_cnt) {
@@ -528,6 +578,8 @@ static void syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int 
 				buffer[bytec] &= ~bcval;
 		}
 	}
+
+	return ERROR_OK;
 }
 
 static int ch341a_jtag_execute_queue(void)
@@ -536,52 +588,63 @@ static int ch341a_jtag_execute_queue(void)
 	enum scan_type type;
 	int scan_size;
 	uint8_t *buffer;
-	int retval = ERROR_OK;
+	int retval;
 
 	while (cmd) {
 		switch (cmd->type) {
 			case JTAG_RESET:
 				LOG_DEBUG_IO("reset trst: %i srst %i", cmd->cmd.reset->trst, cmd->cmd.reset->srst);
-				if (cmd->cmd.reset->trst == 1 ||
-					(cmd->cmd.reset->srst &&
+				if (cmd->cmd.reset->trst == 1 || (cmd->cmd.reset->srst &&
 					(jtag_get_reset_config() & RESET_SRST_PULLS_TRST))) {
 					tap_set_state(TAP_RESET);
 				}
-				ch341a_jtag_reset(cmd->cmd.reset->trst, cmd->cmd.reset->srst);
+				retval = ch341a_jtag_reset(cmd->cmd.reset->trst, cmd->cmd.reset->srst);
+				if (retval)
+					return retval;
 				break;
 
 			case JTAG_RUNTEST:
 				LOG_DEBUG_IO("runtest %i cycles, end in %s", cmd->cmd.runtest->num_cycles,
-					tap_state_name(cmd->cmd.runtest->end_state));
-				syncbb_end_state(cmd->cmd.runtest->end_state);
-				syncbb_runtest(cmd->cmd.runtest->num_cycles);
+							 tap_state_name(cmd->cmd.runtest->end_state));
+				if ((retval = syncbb_end_state(cmd->cmd.runtest->end_state)) ||
+					(retval = syncbb_runtest(cmd->cmd.runtest->num_cycles)))
+					return retval;
 				break;
 
 			case JTAG_STABLECLOCKS:
-				syncbb_stableclocks(cmd->cmd.stableclocks->num_cycles);
+				retval = syncbb_stableclocks(cmd->cmd.stableclocks->num_cycles);
+				if (retval)
+					return retval;
 				break;
 
 			case JTAG_TLR_RESET:
 				LOG_DEBUG_IO("statemove end in %s", tap_state_name(cmd->cmd.statemove->end_state));
-				syncbb_end_state(cmd->cmd.statemove->end_state);
-				syncbb_state_move(0);
+				if ((retval = syncbb_end_state(cmd->cmd.statemove->end_state)) ||
+					(retval = syncbb_state_move(0)))
+					return retval;
 				break;
 
 			case JTAG_PATHMOVE:
 				LOG_DEBUG_IO("pathmove: %i states, end in %s", cmd->cmd.pathmove->num_states,
 					tap_state_name(cmd->cmd.pathmove->path[cmd->cmd.pathmove->num_states - 1]));
-				syncbb_path_move(cmd->cmd.pathmove);
+				retval = syncbb_path_move(cmd->cmd.pathmove);
+				if (retval)
+					return retval;
 				break;
 
 			case JTAG_SCAN:
 				LOG_DEBUG_IO("%s scan end in %s",  (cmd->cmd.scan->ir_scan) ? "IR" : "DR",
 					tap_state_name(cmd->cmd.scan->end_state));
-				syncbb_end_state(cmd->cmd.scan->end_state);
+				retval = syncbb_end_state(cmd->cmd.scan->end_state);
+				if (retval)
+					return retval;
 				scan_size = jtag_build_buffer(cmd->cmd.scan, &buffer);
 				type = jtag_scan_type(cmd->cmd.scan);
-				syncbb_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size);
-				if (jtag_read_buffer(buffer, cmd->cmd.scan) != ERROR_OK)
-					retval = ERROR_JTAG_QUEUE_FAILED;
+				if ((retval = syncbb_scan(cmd->cmd.scan->ir_scan, type, buffer, scan_size)) ||
+					(retval = jtag_read_buffer(buffer, cmd->cmd.scan))) {
+					free(buffer);
+					return retval;
+				}
 				free(buffer);
 				break;
 
@@ -591,21 +654,26 @@ static int ch341a_jtag_execute_queue(void)
 				break;
 
 			case JTAG_TMS:
-				syncbb_execute_tms(cmd);
+				retval = syncbb_execute_tms(cmd);
+				if (retval)
+					return retval;
 				break;
 
 			default:
 				LOG_ERROR("BUG: unknown JTAG command type encountered");
-				exit(-1);
+				return ERROR_FAIL;
 		}
 
-		if (ch341a_port_buffer_curr)
-			ch341a_port_buffer_flush(false);
+		if (ch341a_port_buffer_curr) {
+			retval = ch341a_port_buffer_flush(false);
+			if (retval < 0)
+				return retval;
+		}
 
 		cmd = cmd->next;
 	}
 
-	return retval;
+	return ERROR_OK;
 }
 
 static int ch341a_init(void)
@@ -652,19 +720,22 @@ static int ch341a_init(void)
 		return ERROR_JTAG_INIT_FAILED;
 	}
 
-	ch341a_port_direction((1 << ch341a_tdi_gpio) | (1 << ch341a_tck_gpio) |
-						  (1 << ch341a_tms_gpio) | (1 << ch341a_trst_gpio) |
-						  (1 << ch341a_srst_gpio));
-
-	return ERROR_OK;
+	return ch341a_port_direction((1 << ch341a_tdi_gpio) | (1 << ch341a_tck_gpio) |
+								 (1 << ch341a_tms_gpio) | (1 << ch341a_trst_gpio) |
+								 (1 << ch341a_srst_gpio));
 }
 
 static int ch341a_quit(void)
 {
-	ch341a_port_direction(0);
-	jtag_libusb_close(ch341a_adapter);
+	int retval;
 
+	retval = ch341a_port_direction(0);
+	if (retval)
+		return retval;
+
+	jtag_libusb_close(ch341a_adapter);
 	free(ch341a_port_buffer);
+
 	ch341a_port_buffer = NULL;
 	ch341a_port_buffer_curr = 0;
 	ch341a_port_buffer_size = 4096;
