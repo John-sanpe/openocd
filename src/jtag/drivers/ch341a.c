@@ -7,6 +7,7 @@
 #include <jtag/adapter.h>
 #include <jtag/interface.h>
 #include <jtag/commands.h>
+#include <helper/bits.h>
 #include <helper/time_support.h>
 #include "libusb_helper.h"
 
@@ -31,6 +32,7 @@
 #define CH341A_UIO_CMD_STM_IN           0x00
 #define CH341A_UIO_CMD_STM_DIR          0x40
 #define CH341A_UIO_CMD_STM_OUT          0x80
+#define CH341A_UIO_CMD_STM_US           0xc0
 #define CH341A_UIO_CMD_STM_END          0x20
 
 enum ch341a_pin_num {
@@ -60,6 +62,9 @@ static uint16_t ch341a_vid = CH341A_USB_VENDOR;
 static uint16_t ch341a_pid = CH341A_USB_PRODUCT;
 static struct libusb_device_handle *ch341a_adapter;
 
+static uint8_t ch341a_port_value = 0xff;
+static uint8_t ch341a_port_udelay;
+
 static unsigned int ch341a_tck_gpio  = CH341A_PIN_D3;
 static unsigned int ch341a_tms_gpio  = CH341A_PIN_D0;
 static unsigned int ch341a_tdo_gpio  = CH341A_PIN_D7;
@@ -82,12 +87,12 @@ static enum ch341a_pin_num ch341a_name_to_pin(const char *name)
 	return CH341A_PIN_NULL;
 }
 
-static bool ch341a_pin_is_read(enum ch341a_pin_num num)
+static bool ch341a_pin_input_allowed(enum ch341a_pin_num num)
 {
 	return num <= CH341A_PIN_D7;
 }
 
-static bool ch341a_pin_is_write(enum ch341a_pin_num num)
+static bool ch341a_pin_output_allowed(enum ch341a_pin_num num)
 {
 	return num <= CH341A_PIN_D5;
 }
@@ -109,6 +114,24 @@ COMMAND_HANDLER(ch341a_handle_vid_pid_command)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(ch341a_handle_jtag_udelay_command)
+{
+	if (CMD_ARGC != 1) {
+		LOG_WARNING("incomplete ch341a_jtag_udelay configuration");
+		return ERROR_COMMAND_SYNTAX_ERROR;
+	}
+
+	COMMAND_PARSE_NUMBER(u8, CMD_ARGV[0], ch341a_port_udelay);
+	if (ch341a_port_udelay > 0x3f) {
+		ch341a_port_udelay = 0x3f;
+	}
+
+	command_print(CMD, "ch341a jtag delay: %uus",
+				  ch341a_port_udelay);
+
+	return ERROR_OK;
+}
+
 COMMAND_HANDLER(ch341a_handle_jtag_nums_command)
 {
 	if (CMD_ARGC != 8)
@@ -121,22 +144,22 @@ COMMAND_HANDLER(ch341a_handle_jtag_nums_command)
 	ch341a_trst_gpio = ch341a_name_to_pin(CMD_ARGV[4]);
 	ch341a_srst_gpio = ch341a_name_to_pin(CMD_ARGV[5]);
 
-	if (!ch341a_pin_is_write(ch341a_tck_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_tck_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
-	if (!ch341a_pin_is_write(ch341a_tms_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_tms_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
-	if (!ch341a_pin_is_read(ch341a_tdo_gpio))
+	if (!ch341a_pin_input_allowed(ch341a_tdo_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
-	if (!ch341a_pin_is_write(ch341a_tdi_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_tdi_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
-	if (!ch341a_pin_is_write(ch341a_trst_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_trst_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
-	if (!ch341a_pin_is_write(ch341a_srst_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_srst_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
 	command_print(CMD, "ch341a nums: "
@@ -160,7 +183,7 @@ COMMAND_HANDLER(ch341a_handle_tck_num_command)
 
 	ch341a_tck_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
 
-	if (!ch341a_pin_is_write(ch341a_tck_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_tck_gpio))
 		return ERROR_COMMAND_SYNTAX_ERROR;
 
 	command_print(CMD, "ch341a num: TCK = %d %s",
@@ -176,7 +199,7 @@ COMMAND_HANDLER(ch341a_handle_tms_num_command)
 
 	ch341a_tms_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
 
-	if (!ch341a_pin_is_write(ch341a_tms_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_tms_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
 	command_print(CMD, "ch341a num: TMS = %d %s",
@@ -192,7 +215,7 @@ COMMAND_HANDLER(ch341a_handle_tdo_num_command)
 
 	ch341a_tdo_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
 
-	if (!ch341a_pin_is_read(ch341a_tdo_gpio))
+	if (!ch341a_pin_input_allowed(ch341a_tdo_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
 	command_print(CMD, "ch341a num: TDO = %d %s",
@@ -208,7 +231,7 @@ COMMAND_HANDLER(ch341a_handle_tdi_num_command)
 
 	ch341a_tdi_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
 
-	if (!ch341a_pin_is_write(ch341a_tdi_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_tdi_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
 	command_print(CMD, "ch341a num: TDI = %d %s",
@@ -224,7 +247,7 @@ COMMAND_HANDLER(ch341a_handle_trst_num_command)
 
 	ch341a_trst_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
 
-	if (!ch341a_pin_is_write(ch341a_trst_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_trst_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
 	command_print(CMD, "ch341a num: TRST = %d %s",
@@ -240,7 +263,7 @@ COMMAND_HANDLER(ch341a_handle_srst_num_command)
 
 	ch341a_srst_gpio = ch341a_name_to_pin(CMD_ARGV[0]);
 
-	if (!ch341a_pin_is_write(ch341a_srst_gpio))
+	if (!ch341a_pin_output_allowed(ch341a_srst_gpio))
 		return ERROR_COMMAND_CLOSE_CONNECTION;
 
 	command_print(CMD, "ch341a num: SRST = %d %s",
@@ -268,52 +291,59 @@ static int ch341a_port_direction(uint8_t dire)
 	return ERROR_OK;
 }
 
-static int ch341a_port_transfer(uint8_t *buff, unsigned int len, bool read)
+static int ch341a_port_transfer(uint8_t *buff, unsigned int len, unsigned int rlen)
 {
-	uint8_t transfer[CH341A_PACKET_LENGTH + 2];
-	unsigned int xfer;
-	int ret, received;
+	uint8_t transfer[CH341A_PACKET_LENGTH];
+	uint8_t *recv_ptr = buff;
+	unsigned int count = 0;
 
-	for (received = 0; (xfer = MIN(len, CH341A_PACKET_LENGTH / (read + 1))); len -= xfer, buff += xfer) {
-		unsigned int xfer_send = xfer * (read + 1) + 2;
-		unsigned int count;
-		int xfer_recv;
+	while (count < len) {
+		unsigned int receive, index = 1;
+		int retval, xfer;
 
-		transfer[0] = CH341A_CMD_UIO_STREAM;
-		transfer[xfer_send - 1] = CH341A_UIO_CMD_STM_END;
+		for (receive = 0; count < len; ++count) {
+			unsigned int xsize;
 
-		if (read) {
-			for (count = 0; count < xfer; ++count) {
-				transfer[(count + 1) * 2 - 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *(buff + count));
-				transfer[(count + 1) * 2 + 0] = CH341A_UIO_CMD_STM_IN;
+			xsize = (rlen && (count & 0x01) ? 1 : 0) + (ch341a_port_udelay ? 1 : 0) + 1;
+			if (index + xsize >= CH341A_PACKET_LENGTH)
+				break;
+
+			transfer[index++] = CH341A_UIO_CMD_STM_OUT | (0x3f & *buff++);
+			if (ch341a_port_udelay)
+				transfer[index++] = CH341A_UIO_CMD_STM_US | ch341a_port_udelay;
+
+			if (rlen && (count & 0x01)) {
+				transfer[index++] = CH341A_UIO_CMD_STM_IN;
+				receive++;
+				rlen--;
 			}
-		} else {
-			for (count = 0; count < xfer; ++count)
-				transfer[count + 1] = CH341A_UIO_CMD_STM_OUT | (0x3f & *(buff + count));
 		}
 
-		ret = jtag_libusb_bulk_write(ch341a_adapter, CH341A_BULK_WRITE_ENDPOINT,
-									 (void *)transfer, xfer_send, CH341A_BULK_TIMEOUT, &xfer_recv);
-		if (ret < 0 || xfer_recv < 0) {
+		transfer[0] = CH341A_CMD_UIO_STREAM;
+		transfer[index++] = CH341A_UIO_CMD_STM_END;
+
+		retval = jtag_libusb_bulk_write(ch341a_adapter, CH341A_BULK_WRITE_ENDPOINT,
+									 	(void *)transfer, index, CH341A_BULK_TIMEOUT, &xfer);
+		if (retval < 0 || (unsigned int)xfer != index) {
 			LOG_ERROR("%s: usb bulk write failed", __func__);
 			return ERROR_WAIT;
 		}
 
-		if (read) {
-			ret = jtag_libusb_bulk_read(ch341a_adapter, CH341A_BULK_READ_ENDPOINT,
-										(void *)buff, xfer, CH341A_BULK_TIMEOUT, &xfer_recv);
-			if (ret < 0 || xfer_recv < 0) {
+		if (receive) {
+			retval = jtag_libusb_bulk_read(ch341a_adapter, CH341A_BULK_READ_ENDPOINT,
+										   (void *)recv_ptr, receive, CH341A_BULK_TIMEOUT, &xfer);
+			if (retval < 0 || (unsigned int)xfer != receive) {
 				LOG_ERROR("%s: usb bulk read failed", __func__);
 				return ERROR_WAIT;
 			}
-			received += xfer_recv;
+			recv_ptr += receive;
 		}
 	}
 
-	return received;
+	return ERROR_OK;
 }
 
-static int ch341a_port_buffer_flush(bool read)
+static int ch341a_port_buffer_flush(unsigned int read)
 {
 	int retval;
 
@@ -323,57 +353,65 @@ static int ch341a_port_buffer_flush(bool read)
 	return retval;
 }
 
-static void ch341a_port_buffer_increase(unsigned long new_size)
+static int ch341a_port_buffer_increase(unsigned long new_size)
 {
 	uint8_t *new_ptr;
 
 	if (new_size < ch341a_port_buffer_size)
-		return;
+		return ERROR_OK;
 
 	new_size = ch341a_port_buffer_size * 2;
 	new_ptr = realloc(ch341a_port_buffer, new_size);
-	if (!new_ptr)
-		return;
+	if (!new_ptr) {
+		LOG_ERROR("Out of memory");
+		return ERROR_BUF_TOO_SMALL;
+	}
 
 	ch341a_port_buffer = new_ptr;
 	ch341a_port_buffer_size = new_size;
+
+	return ERROR_OK;
 }
 
 static inline int ch341a_jtag_write(bool tck, bool tms, bool tdi)
 {
-	uint8_t value = 0xff;
+	int retval;
 
-	value = tck ? value | (1 << ch341a_tck_gpio) : value & ~(1 << ch341a_tck_gpio);
-	value = tms ? value | (1 << ch341a_tms_gpio) : value & ~(1 << ch341a_tms_gpio);
-	value = tdi ? value | (1 << ch341a_tdi_gpio) : value & ~(1 << ch341a_tdi_gpio);
+	ch341a_port_value = tck ? ch341a_port_value | BIT(ch341a_tck_gpio) :
+							  ch341a_port_value & ~BIT(ch341a_tck_gpio);
+	ch341a_port_value = tms ? ch341a_port_value | BIT(ch341a_tms_gpio) :
+							  ch341a_port_value & ~BIT(ch341a_tms_gpio);
+	ch341a_port_value = tdi ? ch341a_port_value | BIT(ch341a_tdi_gpio) :
+							  ch341a_port_value & ~BIT(ch341a_tdi_gpio);
 
-	ch341a_port_buffer_increase(ch341a_port_buffer_curr);
-	if (ch341a_port_buffer_curr >= ch341a_port_buffer_size) {
+	retval = ch341a_port_buffer_increase(ch341a_port_buffer_curr);
+	if (retval) {
 		LOG_ERROR("%s: buffer overflow", __func__);
-		return ERROR_BUF_TOO_SMALL;
+		return retval;
 	}
 
-	ch341a_port_buffer[ch341a_port_buffer_curr++] = value;
+	ch341a_port_buffer[ch341a_port_buffer_curr++] = ch341a_port_value;
 	return ERROR_OK;
 }
 
 static inline int ch341a_jtag_reset(bool trst, bool srst)
 {
-	uint8_t value = 0xff;
 	int retval;
 
-	value = trst ? value & ~(1 << ch341a_trst_gpio) : value | (1 << ch341a_trst_gpio);
-	value = srst ? value & ~(1 << ch341a_srst_gpio) : value | (1 << ch341a_srst_gpio);
+	ch341a_port_value = trst ? ch341a_port_value & ~BIT(ch341a_trst_gpio) :
+							   ch341a_port_value | BIT(ch341a_trst_gpio);
+	ch341a_port_value = srst ? ch341a_port_value & ~BIT(ch341a_srst_gpio) :
+							   ch341a_port_value | BIT(ch341a_srst_gpio);
 
-	ch341a_port_buffer_increase(ch341a_port_buffer_curr);
-	if (ch341a_port_buffer_curr >= ch341a_port_buffer_size) {
+	retval = ch341a_port_buffer_increase(ch341a_port_buffer_curr);
+	if (retval) {
 		LOG_ERROR("%s: buffer overflow", __func__);
-		return ERROR_BUF_TOO_SMALL;
+		return retval;
 	}
 
-	ch341a_port_buffer[ch341a_port_buffer_curr++] = value;
+	ch341a_port_buffer[ch341a_port_buffer_curr++] = ch341a_port_value;
 	retval = ch341a_port_buffer_flush(false);
-	if (retval < 0)
+	if (retval)
 		return retval;
 
 	return ERROR_OK;
@@ -541,7 +579,6 @@ static int syncbb_stableclocks(unsigned int cycles)
 static int syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int scan_size)
 {
 	tap_state_t saved_end_state = tap_get_end_state();
-	unsigned long bit_base;
 	int bit_cnt, retval;
 
 	if (!((!ir_scan && (tap_get_state() == TAP_DRSHIFT)) || (ir_scan && (tap_get_state() == TAP_IRSHIFT)))) {
@@ -561,7 +598,9 @@ static int syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int s
 			return retval;
 	}
 
-	bit_base = ch341a_port_buffer_curr;
+	retval = ch341a_port_buffer_flush(0);
+	if (retval)
+		return retval;
 
 	for (bit_cnt = 0; bit_cnt < scan_size; ++bit_cnt) {
 		int bcval, bytec;
@@ -587,8 +626,8 @@ static int syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int s
 			return retval;
 	}
 
-	retval = ch341a_port_buffer_flush(type != SCAN_OUT);
-	if (retval < 0)
+	retval = ch341a_port_buffer_flush(type != SCAN_OUT ? scan_size : 0);
+	if (retval)
 		return retval;
 
 	if (type != SCAN_OUT) {
@@ -598,7 +637,7 @@ static int syncbb_scan(bool ir_scan, enum scan_type type, uint8_t *buffer, int s
 
 			bcval = 1 << (bit_cnt % 8);
 			bytec = bit_cnt / 8;
-			value = ch341a_port_buffer[bit_base + bit_cnt * 2 + 1];
+			value = ch341a_port_buffer[bit_cnt];
 
 			if (value & (1 << ch341a_tdo_gpio))
 				buffer[bytec] |= bcval;
@@ -703,8 +742,8 @@ static int ch341a_jtag_execute_queue(void)
 		}
 
 		if (ch341a_port_buffer_curr) {
-			retval = ch341a_port_buffer_flush(false);
-			if (retval < 0)
+			retval = ch341a_port_buffer_flush(0);
+			if (retval)
 				return retval;
 		}
 
@@ -777,6 +816,7 @@ static int ch341a_quit(void)
 	ch341a_port_buffer = NULL;
 	ch341a_port_buffer_curr = 0;
 	ch341a_port_buffer_size = 4096;
+	ch341a_port_value = 0xff;
 
 	return ERROR_OK;
 }
@@ -788,6 +828,12 @@ static const struct command_registration ch341a_subcommand_handlers[] = {
 		.mode = COMMAND_CONFIG,
 		.help = "USB VID and PID of the adapter",
 		.usage = "vid pid",
+	}, {
+		.name = "jtag_udelay",
+		.handler = ch341a_handle_jtag_udelay_command,
+		.mode = COMMAND_CONFIG,
+		.help = "",
+		.usage = "jtag delay (in us)",
 	}, {
 		.name = "jtag_nums",
 		.handler = ch341a_handle_jtag_nums_command,
