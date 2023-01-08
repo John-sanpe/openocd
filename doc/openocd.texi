@@ -2794,7 +2794,7 @@ If not specified, default 0xFFFF is used.
 @end deffn
 
 @deffn {Interface Driver} {ch341a}
-This driver is implementing synchronous bitbang mode of an WCH CH341A,
+This driver is implementing synchronous bitbang mode of WCH CH341A,
 CH341H and similar USB Parallel/SPI bridge ICs by reusing UIO signals as GPIO.
 
 List of connections (default physical pin numbers for CH341A in 28-pin SOP package):
@@ -2825,8 +2825,13 @@ The vendor ID and product ID of the adapter. If not specified, default
 0x1a86:0x5512 is used.
 @end deffn
 
+@deffn {Config Command} {ch341a jtag_udelay} @var{usec}
+Set bitbang delay in microsecond.
+If not specified, default none delay.
+@end deffn
+
 @deffn {Config Command} {ch341a jtag_nums} @var{tck} @var{tms} @var{tdi} @var{tdo} @var{trst} @var{srst}
-Set four JTAG GPIO numbers at once.
+Set six JTAG GPIO numbers at once.
 If not specified, default D3 D0 D7 D5 D1 D2 is used.
 @end deffn
 
@@ -8541,11 +8546,19 @@ that particular type of PLD.
 
 @deffn {FPGA Driver} {virtex2} [no_jstart]
 Virtex-II is a family of FPGAs sold by Xilinx.
+This driver can also be used to load Series3, Series6, Series7 and Zynq 7000 devices.
 It supports the IEEE 1532 standard for In-System Configuration (ISC).
 
 If @var{no_jstart} is non-zero, the JSTART instruction is not used after
 loading the bitstream. While required for Series2, Series3, and Series6, it
 breaks bitstream loading on Series7.
+
+@example
+openocd -f board/digilent_zedboard.cfg -c "init" \
+	-c "pld load 0 zedboard_bitstream.bit"
+@end example
+
+
 
 @deffn {Command} {virtex2 read_stat} num
 Reads and displays the Virtex-II status register (STAT)
@@ -8578,7 +8591,7 @@ command. All output is relayed through the GDB session.
 
 @item @b{Machine Interface}
 The Tcl interface's intent is to be a machine interface. The default Tcl
-port is 5555.
+port is 6666.
 @end itemize
 
 

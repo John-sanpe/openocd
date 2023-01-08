@@ -826,14 +826,14 @@ static const struct command_registration ch341a_subcommand_handlers[] = {
 		.name = "vid_pid",
 		.handler = ch341a_handle_vid_pid_command,
 		.mode = COMMAND_CONFIG,
-		.help = "USB VID and PID of the adapter",
+		.help = "USB VID and PID of the adapter.",
 		.usage = "vid pid",
 	}, {
 		.name = "jtag_udelay",
 		.handler = ch341a_handle_jtag_udelay_command,
 		.mode = COMMAND_CONFIG,
-		.help = "",
-		.usage = "jtag delay (in us)",
+		.help = "jtag bitbang delay in us.",
+		.usage = "[usec]",
 	}, {
 		.name = "jtag_nums",
 		.handler = ch341a_handle_jtag_nums_command,
